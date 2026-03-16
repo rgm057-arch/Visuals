@@ -217,6 +217,56 @@
             z-index: 100;
         }
 
+        /* ── ZOOM CONTROLS ── */
+        #zoom-controls {
+            position: absolute;
+            bottom: 60px;
+            right: 16px;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            align-items: center;
+        }
+
+        .zoom-btn {
+            width: 40px;
+            height: 40px;
+            background: rgba(20, 28, 50, 0.95);
+            border: 1px solid rgba(100, 160, 255, 0.3);
+            border-radius: 10px;
+            color: #7ab5ff;
+            font-size: 22px;
+            font-weight: 700;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+            user-select: none;
+        }
+
+        .zoom-btn:hover {
+            background: rgba(40, 60, 90, 0.95);
+            border-color: rgba(100, 160, 255, 0.6);
+            transform: scale(1.08);
+        }
+
+        .zoom-btn:active {
+            transform: scale(0.95);
+        }
+
+        #zoom-level {
+            font-size: 10px;
+            color: #6080a0;
+            background: rgba(20, 28, 50, 0.9);
+            border: 1px solid rgba(100, 160, 255, 0.15);
+            border-radius: 6px;
+            padding: 3px 8px;
+            text-align: center;
+            min-width: 40px;
+        }
+
         /* ── LOADING FALLBACK ── */
         #loading {
             position: absolute;
@@ -301,9 +351,16 @@
     <!-- BOTTOM: Controls -->
     <div id="controls-hint">
         <div><span>Left Drag</span> Rotate</div>
-        <div><span>Scroll</span> Zoom</div>
+        <div><span>Scroll / +−</span> Zoom</div>
         <div><span>Right Drag</span> Pan</div>
         <div><span>Click</span> Select Part</div>
+    </div>
+
+    <!-- ZOOM CONTROLS -->
+    <div id="zoom-controls">
+        <button class="zoom-btn" id="zoom-in" title="Zoom In (+)">+</button>
+        <div id="zoom-level">100%</div>
+        <button class="zoom-btn" id="zoom-out" title="Zoom Out (-)">−</button>
     </div>
 
     <div class="tooltip" id="tooltip"></div>
@@ -411,9 +468,20 @@
 
     renderer.domElement.addEventListener('mouseup', () => { isRotating = false; isPanning = false; });
     renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
-    renderer.domElement.addEventListener('wheel', (e) => {
-        spherical.radius = Math.max(5, Math.min(30, spherical.radius + e.deltaY * 0.015));
+    function zoomTo(newRadius) {
+        spherical.radius = Math.max(3, Math.min(35, newRadius));
         updateCamera();
+        updateZoomLevel();
+    }
+
+    function updateZoomLevel() {
+        const pct = Math.round((1 - (spherical.radius - 3) / 32) * 200);
+        const el = document.getElementById('zoom-level');
+        if (el) el.textContent = pct + '%';
+    }
+
+    renderer.domElement.addEventListener('wheel', (e) => {
+        zoomTo(spherical.radius + e.deltaY * 0.015);
     });
 
     // Touch support
@@ -437,15 +505,50 @@
         }
     }, { passive: false });
 
-    renderer.domElement.addEventListener('touchend', () => { isRotating = false; });
+    // Pinch-to-zoom
+    let lastPinchDist = 0;
+    renderer.domElement.addEventListener('touchstart', (e) => {
+        if (e.touches.length === 2) {
+            isRotating = false;
+            const dx = e.touches[0].clientX - e.touches[1].clientX;
+            const dy = e.touches[0].clientY - e.touches[1].clientY;
+            lastPinchDist = Math.sqrt(dx * dx + dy * dy);
+        }
+    }, { passive: false });
+
+    renderer.domElement.addEventListener('touchmove', (e) => {
+        if (e.touches.length === 2) {
+            e.preventDefault();
+            const dx = e.touches[0].clientX - e.touches[1].clientX;
+            const dy = e.touches[0].clientY - e.touches[1].clientY;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            const delta = lastPinchDist - dist;
+            zoomTo(spherical.radius + delta * 0.03);
+            lastPinchDist = dist;
+        }
+    }, { passive: false });
+
+    renderer.domElement.addEventListener('touchend', () => { isRotating = false; lastPinchDist = 0; });
+
+    // Zoom buttons
+    document.getElementById('zoom-in').addEventListener('click', () => { zoomTo(spherical.radius - 1.5); });
+    document.getElementById('zoom-out').addEventListener('click', () => { zoomTo(spherical.radius + 1.5); });
+
+    // Keyboard zoom
+    document.addEventListener('keydown', (e) => {
+        if (e.key === '+' || e.key === '=') { zoomTo(spherical.radius - 1.5); }
+        if (e.key === '-' || e.key === '_') { zoomTo(spherical.radius + 1.5); }
+    });
+
+    updateZoomLevel();
 
     // ─── Materials (bright, high-contrast) ──────────────────────
     const bodyMat = new THREE.MeshStandardMaterial({ color: 0xC49A5C, roughness: 0.6, metalness: 0.05 });
     const darkBodyMat = new THREE.MeshStandardMaterial({ color: 0x8B6B3D, roughness: 0.6 });
-    const boneMat = new THREE.MeshStandardMaterial({ color: 0xf5e8c8, roughness: 0.35, metalness: 0.1 });
-    const muscleMat = new THREE.MeshStandardMaterial({ color: 0xd94444, roughness: 0.45, transparent: true, opacity: 0.88 });
-    const organMat = new THREE.MeshStandardMaterial({ color: 0xe05575, roughness: 0.4, transparent: true, opacity: 0.88 });
-    const nerveMat = new THREE.MeshStandardMaterial({ color: 0xf5d835, roughness: 0.3, metalness: 0.2, transparent: true, opacity: 0.85 });
+    const boneMat = new THREE.MeshStandardMaterial({ color: 0xf5e8c8, roughness: 0.35, metalness: 0.1, side: THREE.DoubleSide });
+    const muscleMat = new THREE.MeshStandardMaterial({ color: 0xd94444, roughness: 0.45, transparent: true, opacity: 0.88, side: THREE.DoubleSide, depthWrite: false });
+    const organMat = new THREE.MeshStandardMaterial({ color: 0xe05575, roughness: 0.4, transparent: true, opacity: 0.88, side: THREE.DoubleSide, depthWrite: false });
+    const nerveMat = new THREE.MeshStandardMaterial({ color: 0xf5d835, roughness: 0.3, metalness: 0.2, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthWrite: false });
 
     // ─── Part storage ───────────────────────────────────────────
     const dogGroup = new THREE.Group();
@@ -578,6 +681,50 @@
             [-2.3 - i * 0.12, 2.85 + i * 0.12, 0], null, null, 'tailB_' + i, 'skeletal');
     }
 
+    // Sternum (breastbone)
+    for (let i = 0; i < 8; i++) {
+        const x = 1.5 - i * 0.26;
+        makePart(new THREE.SphereGeometry(0.06, 8, 6), boneMat, [x, 1.65, 0], null, [1.2, 0.6, 1.8], 'sternum_' + i, 'skeletal');
+    }
+
+    // Hyoid bone (throat)
+    makePart(new THREE.TorusGeometry(0.12, 0.025, 6, 10, Math.PI * 1.5), boneMat, [3.3, 3.1, 0], [Math.PI/2, 0, 0], null, 'hyoid', 'skeletal');
+
+    // Patellae (kneecaps)
+    makePart(new THREE.SphereGeometry(0.06, 8, 6), boneMat, [-1.55, 0.9, 0.45], null, [1.0, 1.2, 0.8], 'patellaR', 'skeletal');
+    makePart(new THREE.SphereGeometry(0.06, 8, 6), boneMat, [-1.55, 0.9, -0.45], null, [1.0, 1.2, 0.8], 'patellaL', 'skeletal');
+
+    // Carpals (front wrist bones)
+    makePart(new THREE.SphereGeometry(0.08, 8, 6), boneMat, [1.7, -0.05, 0.45], null, [1.0, 0.5, 1.0], 'carpalR', 'skeletal');
+    makePart(new THREE.SphereGeometry(0.08, 8, 6), boneMat, [1.7, -0.05, -0.45], null, [1.0, 0.5, 1.0], 'carpalL', 'skeletal');
+
+    // Tarsals (hind ankle bones)
+    makePart(new THREE.SphereGeometry(0.08, 8, 6), boneMat, [-1.45, -0.05, 0.45], null, [1.0, 0.5, 1.0], 'tarsalR', 'skeletal');
+    makePart(new THREE.SphereGeometry(0.08, 8, 6), boneMat, [-1.45, -0.05, -0.45], null, [1.0, 0.5, 1.0], 'tarsalL', 'skeletal');
+
+    // Metacarpals (front foot bones)
+    for (let d = 0; d < 4; d++) {
+        const z = 0.35 + d * 0.07;
+        makePart(new THREE.CylinderGeometry(0.018, 0.018, 0.25, 6), boneMat, [1.7, -0.18, z], null, null, 'metacR_' + d, 'skeletal');
+        makePart(new THREE.CylinderGeometry(0.018, 0.018, 0.25, 6), boneMat, [1.7, -0.18, -z], null, null, 'metacL_' + d, 'skeletal');
+    }
+
+    // Metatarsals (hind foot bones)
+    for (let d = 0; d < 4; d++) {
+        const z = 0.35 + d * 0.07;
+        makePart(new THREE.CylinderGeometry(0.018, 0.018, 0.25, 6), boneMat, [-1.45, -0.18, z], null, null, 'metatR_' + d, 'skeletal');
+        makePart(new THREE.CylinderGeometry(0.018, 0.018, 0.25, 6), boneMat, [-1.45, -0.18, -z], null, null, 'metatL_' + d, 'skeletal');
+    }
+
+    // Phalanges (toe bones)
+    for (let d = 0; d < 4; d++) {
+        const z = 0.35 + d * 0.07;
+        makePart(new THREE.SphereGeometry(0.025, 6, 4), boneMat, [1.7, -0.3, z], null, [1, 0.6, 1], 'phalFR_' + d, 'skeletal');
+        makePart(new THREE.SphereGeometry(0.025, 6, 4), boneMat, [1.7, -0.3, -z], null, [1, 0.6, 1], 'phalFL_' + d, 'skeletal');
+        makePart(new THREE.SphereGeometry(0.025, 6, 4), boneMat, [-1.45, -0.3, z], null, [1, 0.6, 1], 'phalHR_' + d, 'skeletal');
+        makePart(new THREE.SphereGeometry(0.025, 6, 4), boneMat, [-1.45, -0.3, -z], null, [1, 0.6, 1], 'phalHL_' + d, 'skeletal');
+    }
+
     // ─────────────────────────────────────────────────────────────
     //  MUSCULAR SYSTEM
     // ─────────────────────────────────────────────────────────────
@@ -599,38 +746,109 @@
 
     makePart(new THREE.SphereGeometry(0.65, 16, 12), muscleMat, [0.1, 1.85, 0], null, [2.0, 0.55, 0.7], 'abMuscle', 'muscular');
 
+    // Triceps
+    makePart(new THREE.SphereGeometry(0.18, 12, 10), muscleMat, [1.6, 1.55, 0.55], null, [0.8, 1.3, 0.6], 'tricepR', 'muscular');
+    makePart(new THREE.SphereGeometry(0.18, 12, 10), muscleMat, [1.6, 1.55, -0.55], null, [0.8, 1.3, 0.6], 'tricepL', 'muscular');
+
+    // Biceps
+    makePart(new THREE.SphereGeometry(0.15, 12, 10), muscleMat, [1.7, 1.6, 0.48], null, [0.6, 1.2, 0.5], 'bicepR', 'muscular');
+    makePart(new THREE.SphereGeometry(0.15, 12, 10), muscleMat, [1.7, 1.6, -0.48], null, [0.6, 1.2, 0.5], 'bicepL', 'muscular');
+
+    // Quadriceps
+    makePart(new THREE.SphereGeometry(0.22, 12, 10), muscleMat, [-1.55, 1.6, 0.48], null, [0.7, 1.4, 0.6], 'quadR', 'muscular');
+    makePart(new THREE.SphereGeometry(0.22, 12, 10), muscleMat, [-1.55, 1.6, -0.48], null, [0.7, 1.4, 0.6], 'quadL', 'muscular');
+
+    // Gluteal muscles
+    makePart(new THREE.SphereGeometry(0.38, 14, 10), muscleMat, [-1.85, 2.4, 0.35], null, [0.9, 0.9, 0.55], 'gluteR', 'muscular');
+    makePart(new THREE.SphereGeometry(0.38, 14, 10), muscleMat, [-1.85, 2.4, -0.35], null, [0.9, 0.9, 0.55], 'gluteL', 'muscular');
+
+    // Intercostal muscles (between ribs)
+    makePart(new THREE.CylinderGeometry(0.4, 0.5, 2.2, 12), muscleMat, [0.5, 2.2, 0], [0, 0, Math.PI/2], [1, 1, 0.55], 'intercostal', 'muscular');
+
+    // Latissimus dorsi
+    makePart(new THREE.SphereGeometry(0.5, 14, 10), muscleMat, [-0.3, 2.5, 0.42], null, [1.6, 0.8, 0.3], 'latR', 'muscular');
+    makePart(new THREE.SphereGeometry(0.5, 14, 10), muscleMat, [-0.3, 2.5, -0.42], null, [1.6, 0.8, 0.3], 'latL', 'muscular');
+
+    // Trapezius
+    makePart(new THREE.SphereGeometry(0.4, 14, 10), muscleMat, [1.2, 2.85, 0], null, [1.5, 0.5, 0.7], 'trapezius', 'muscular');
+
+    // Diaphragm muscle
+    makePart(new THREE.CylinderGeometry(0.55, 0.55, 0.06, 16), muscleMat, [0.35, 2.1, 0], null, [1.0, 1.0, 0.8], 'diaphragmMus', 'muscular');
+
     // ─────────────────────────────────────────────────────────────
     //  INTERNAL ORGANS
     // ─────────────────────────────────────────────────────────────
 
-    const heartMat = new THREE.MeshStandardMaterial({ color: 0xdd2233, roughness: 0.4, transparent: true, opacity: 0.9 });
+    const heartMat = new THREE.MeshStandardMaterial({ color: 0xdd2233, roughness: 0.4, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false });
     makePart(new THREE.SphereGeometry(0.28, 16, 12), heartMat, [1.25, 2.2, 0.12], null, [1.0, 1.25, 0.9], 'heart', 'organs');
 
-    const lungMat = new THREE.MeshStandardMaterial({ color: 0xee9999, roughness: 0.4, transparent: true, opacity: 0.78 });
+    const lungMat = new THREE.MeshStandardMaterial({ color: 0xee9999, roughness: 0.4, transparent: true, opacity: 0.78, side: THREE.DoubleSide, depthWrite: false });
     makePart(new THREE.SphereGeometry(0.48, 16, 12), lungMat, [1.05, 2.35, 0.32], null, [1.2, 0.9, 0.55], 'lungR', 'organs');
     makePart(new THREE.SphereGeometry(0.48, 16, 12), lungMat, [1.05, 2.35, -0.32], null, [1.2, 0.9, 0.55], 'lungL', 'organs');
 
-    const liverMat = new THREE.MeshStandardMaterial({ color: 0x993322, roughness: 0.45, transparent: true, opacity: 0.88 });
+    const liverMat = new THREE.MeshStandardMaterial({ color: 0x993322, roughness: 0.45, transparent: true, opacity: 0.88, side: THREE.DoubleSide, depthWrite: false });
     makePart(new THREE.SphereGeometry(0.4, 16, 12), liverMat, [0.5, 1.9, 0], null, [1.3, 0.65, 0.85], 'liver', 'organs');
 
-    const stomMat = new THREE.MeshStandardMaterial({ color: 0xe09070, roughness: 0.45, transparent: true, opacity: 0.85 });
+    const stomMat = new THREE.MeshStandardMaterial({ color: 0xe09070, roughness: 0.45, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthWrite: false });
     makePart(new THREE.SphereGeometry(0.35, 16, 12), stomMat, [0.0, 1.85, 0.12], null, [1.2, 0.8, 0.8], 'stomach', 'organs');
 
-    const kidMat = new THREE.MeshStandardMaterial({ color: 0x994422, roughness: 0.45, transparent: true, opacity: 0.88 });
+    const kidMat = new THREE.MeshStandardMaterial({ color: 0x994422, roughness: 0.45, transparent: true, opacity: 0.88, side: THREE.DoubleSide, depthWrite: false });
     makePart(new THREE.SphereGeometry(0.17, 12, 10), kidMat, [-0.35, 2.35, 0.38], null, [0.75, 1.2, 0.65], 'kidneyR', 'organs');
     makePart(new THREE.SphereGeometry(0.17, 12, 10), kidMat, [-0.35, 2.35, -0.38], null, [0.75, 1.2, 0.65], 'kidneyL', 'organs');
 
-    const intMat = new THREE.MeshStandardMaterial({ color: 0xe0a878, roughness: 0.5, transparent: true, opacity: 0.82 });
+    const intMat = new THREE.MeshStandardMaterial({ color: 0xe0a878, roughness: 0.5, transparent: true, opacity: 0.82, side: THREE.DoubleSide, depthWrite: false });
     makePart(new THREE.TorusGeometry(0.3, 0.07, 10, 20), intMat, [-0.5, 1.7, 0], [Math.PI/2, 0, 0], [1.5, 1.5, 1], 'intestines', 'organs');
 
-    const bladMat = new THREE.MeshStandardMaterial({ color: 0xccaa55, roughness: 0.45, transparent: true, opacity: 0.82 });
+    const bladMat = new THREE.MeshStandardMaterial({ color: 0xccaa55, roughness: 0.45, transparent: true, opacity: 0.82, side: THREE.DoubleSide, depthWrite: false });
     makePart(new THREE.SphereGeometry(0.17, 12, 10), bladMat, [-1.2, 1.6, 0], null, null, 'bladder', 'organs');
+
+    // Spleen
+    const spleenMat = new THREE.MeshStandardMaterial({ color: 0x882244, roughness: 0.4, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthWrite: false });
+    makePart(new THREE.SphereGeometry(0.22, 12, 10), spleenMat, [-0.2, 1.75, 0.35], null, [1.4, 0.5, 0.5], 'spleen', 'organs');
+
+    // Pancreas
+    const pancMat = new THREE.MeshStandardMaterial({ color: 0xeebb88, roughness: 0.45, transparent: true, opacity: 0.82, side: THREE.DoubleSide, depthWrite: false });
+    makePart(new THREE.CylinderGeometry(0.06, 0.04, 0.7, 8), pancMat, [-0.1, 1.82, 0.15], [0, 0, Math.PI/2], null, 'pancreas', 'organs');
+
+    // Trachea (windpipe)
+    const trachMat = new THREE.MeshStandardMaterial({ color: 0xddaaaa, roughness: 0.35, transparent: true, opacity: 0.8, side: THREE.DoubleSide, depthWrite: false });
+    for (let i = 0; i < 10; i++) {
+        const x = 2.6 - i * 0.18;
+        const y = 2.45 + i * 0.06;
+        makePart(new THREE.TorusGeometry(0.07, 0.02, 6, 10), trachMat, [x, y, 0], [0, Math.PI/2, 0], null, 'trachea_' + i, 'organs');
+    }
+
+    // Esophagus
+    const esoMat = new THREE.MeshStandardMaterial({ color: 0xcc8877, roughness: 0.45, transparent: true, opacity: 0.78, side: THREE.DoubleSide, depthWrite: false });
+    makePart(new THREE.CylinderGeometry(0.04, 0.04, 2.5, 8), esoMat, [1.3, 2.3, -0.08], [0, 0, Math.PI/2 + 0.15], null, 'esophagus', 'organs');
+
+    // Diaphragm
+    const diaMat = new THREE.MeshStandardMaterial({ color: 0xdd7777, roughness: 0.4, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthWrite: false });
+    makePart(new THREE.CylinderGeometry(0.6, 0.6, 0.05, 16), diaMat, [0.35, 2.15, 0], null, [1.0, 1.0, 0.85], 'diaphragm', 'organs');
+
+    // Thyroid gland
+    const thyMat = new THREE.MeshStandardMaterial({ color: 0xcc5566, roughness: 0.4, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthWrite: false });
+    makePart(new THREE.SphereGeometry(0.07, 8, 6), thyMat, [2.9, 2.6, 0.12], null, [1.0, 1.5, 0.8], 'thyroidR', 'organs');
+    makePart(new THREE.SphereGeometry(0.07, 8, 6), thyMat, [2.9, 2.6, -0.12], null, [1.0, 1.5, 0.8], 'thyroidL', 'organs');
+
+    // Adrenal glands
+    const adrMat = new THREE.MeshStandardMaterial({ color: 0xddaa44, roughness: 0.4, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthWrite: false });
+    makePart(new THREE.SphereGeometry(0.06, 8, 6), adrMat, [-0.3, 2.5, 0.32], null, [1.2, 0.6, 0.8], 'adrenalR', 'organs');
+    makePart(new THREE.SphereGeometry(0.06, 8, 6), adrMat, [-0.3, 2.5, -0.32], null, [1.2, 0.6, 0.8], 'adrenalL', 'organs');
+
+    // Gallbladder
+    const gallMat = new THREE.MeshStandardMaterial({ color: 0x559944, roughness: 0.4, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthWrite: false });
+    makePart(new THREE.SphereGeometry(0.08, 8, 6), gallMat, [0.6, 1.85, 0.2], null, [0.7, 1.2, 0.7], 'gallbladder', 'organs');
+
+    // Prostate
+    const prosMat = new THREE.MeshStandardMaterial({ color: 0xbb8866, roughness: 0.45, transparent: true, opacity: 0.82, side: THREE.DoubleSide, depthWrite: false });
+    makePart(new THREE.SphereGeometry(0.08, 8, 6), prosMat, [-1.3, 1.55, 0], null, null, 'prostate', 'organs');
 
     // ─────────────────────────────────────────────────────────────
     //  NERVOUS SYSTEM
     // ─────────────────────────────────────────────────────────────
 
-    const brainMat = new THREE.MeshStandardMaterial({ color: 0xf0c0cc, roughness: 0.35, transparent: true, opacity: 0.88 });
+    const brainMat = new THREE.MeshStandardMaterial({ color: 0xf0c0cc, roughness: 0.35, transparent: true, opacity: 0.88, side: THREE.DoubleSide, depthWrite: false });
     makePart(new THREE.SphereGeometry(0.38, 16, 12), brainMat, [3.55, 3.72, 0], null, [0.85, 0.7, 0.7], 'brain', 'nervous');
 
     // Spinal cord
@@ -649,6 +867,39 @@
 
     // Olfactory bulb
     makePart(new THREE.SphereGeometry(0.14, 10, 8), nerveMat, [4.25, 3.55, 0], null, [1.2, 0.65, 0.75], 'olfactory', 'nervous');
+
+    // Cerebellum
+    makePart(new THREE.SphereGeometry(0.25, 14, 10), brainMat, [3.2, 3.6, 0], null, [0.7, 0.65, 0.75], 'cerebellum', 'nervous');
+
+    // Brainstem
+    makePart(new THREE.CylinderGeometry(0.08, 0.06, 0.5, 8), nerveMat, [3.05, 3.35, 0], [0, 0, -0.6], null, 'brainstem', 'nervous');
+
+    // Vagus nerve (long nerve from brain to abdomen)
+    for (let i = 0; i < 16; i++) {
+        const x = 2.8 - i * 0.22;
+        const y = 2.45 + Math.sin(i * 0.15) * 0.08;
+        makePart(new THREE.SphereGeometry(0.025, 6, 4), nerveMat, [x, y, 0.15], null, null, 'vagus_' + i, 'nervous');
+    }
+
+    // Femoral nerves
+    const femNrvGeo = new THREE.CylinderGeometry(0.015, 0.01, 1.3, 6);
+    makePart(femNrvGeo, nerveMat, [-1.55, 1.45, 0.38], [0, 0, -0.08], null, 'femoralR', 'nervous');
+    makePart(femNrvGeo, nerveMat, [-1.55, 1.45, -0.38], [0, 0, -0.08], null, 'femoralL', 'nervous');
+
+    // Radial nerves
+    const radNrvGeo = new THREE.CylinderGeometry(0.015, 0.01, 1.3, 6);
+    makePart(radNrvGeo, nerveMat, [1.68, 1.3, 0.38], [0, 0, 0.05], null, 'radialR', 'nervous');
+    makePart(radNrvGeo, nerveMat, [1.68, 1.3, -0.38], [0, 0, 0.05], null, 'radialL', 'nervous');
+
+    // Intercostal nerves (along ribs)
+    for (let i = 0; i < 6; i++) {
+        const x = 1.3 - i * 0.35;
+        makePart(new THREE.TorusGeometry(0.35, 0.012, 6, 12, Math.PI * 0.7), nerveMat, [x, 2.2, 0], [Math.PI/2, 0, 0], null, 'intercNrv_' + i, 'nervous');
+    }
+
+    // Optic nerves
+    makePart(new THREE.CylinderGeometry(0.015, 0.015, 0.5, 6), nerveMat, [3.9, 3.7, 0.25], [0, 0, Math.PI/2 - 0.3], null, 'opticR', 'nervous');
+    makePart(new THREE.CylinderGeometry(0.015, 0.015, 0.5, 6), nerveMat, [3.9, 3.7, -0.25], [0, 0, Math.PI/2 - 0.3], null, 'opticL', 'nervous');
 
     scene.add(dogGroup);
 
@@ -671,7 +922,41 @@
         tail: { name: "Tail (Caudal Vertebrae)", category: "Skeletal System", description: "Contains 6-23 vertebrae with muscles for complex movements. Serves as a counterbalance and communication tool.", funFact: "Dogs wag their tails more to the right when happy and to the left when anxious — and other dogs can read this!" },
         nose: { name: "Nose (Rhinarium)", category: "Nervous System", description: "Up to 300 million olfactory receptors (vs. 6 million in humans). Each nostril smells independently to determine scent direction.", funFact: "A dog's nose print is unique, just like a human fingerprint, and can be used for identification." },
         ear: { name: "Ears (Pinnae)", category: "Nervous System", description: "18 muscles control each ear independently. Dogs hear up to 65,000 Hz (humans max at 20,000 Hz) and detect sounds four times farther.", funFact: "Dogs can move their ears like radar dishes to pinpoint sound locations in 1/600th of a second." },
-        kidneys: { name: "Kidneys", category: "Internal Organs", description: "Two bean-shaped kidneys filter blood, remove waste, regulate electrolytes. Process about 20% of cardiac output per minute.", funFact: "Dogs can concentrate their urine much more than humans, which is why they can mark territory with tiny amounts." }
+        kidneys: { name: "Kidneys", category: "Internal Organs", description: "Two bean-shaped kidneys filter blood, remove waste, regulate electrolytes. Process about 20% of cardiac output per minute. Each kidney contains about 400,000 nephrons (filtering units). They also produce erythropoietin, which stimulates red blood cell production.", funFact: "Dogs can concentrate their urine much more than humans, which is why they can mark territory with tiny amounts." },
+        bladder: { name: "Urinary Bladder", category: "Internal Organs", description: "A hollow, muscular organ that stores urine produced by the kidneys. In dogs, it can hold 15-50 ml per kg of body weight. The smooth muscle wall (detrusor) contracts during urination, controlled by both voluntary and involuntary nerves.", funFact: "Male dogs lift their leg to urinate as a territorial marking behavior — the higher the mark, the larger the dog appears to rivals." },
+        intestines: { name: "Intestines", category: "Internal Organs", description: "The small intestine (duodenum, jejunum, ileum) is about 3.5x the dog's body length and handles most nutrient absorption. The large intestine (cecum, colon, rectum) absorbs water. Dogs have a relatively short GI tract compared to herbivores, optimized for a carnivorous diet.", funFact: "A dog's entire digestive transit time is only 6-8 hours — much faster than the 24-72 hours in humans." },
+        spleen: { name: "Spleen", category: "Internal Organs", description: "A large, tongue-shaped organ located on the left side of the abdomen near the stomach. Filters blood, removes old red blood cells, and serves as a reservoir holding up to 10-20% of the dog's blood volume. Also plays a key role in immune function by producing lymphocytes and antibodies.", funFact: "Dogs can survive without a spleen, but they become more susceptible to certain blood-borne infections." },
+        pancreas: { name: "Pancreas", category: "Internal Organs", description: "A V-shaped gland located along the duodenum. Has both exocrine function (producing digestive enzymes — lipase, amylase, trypsin) and endocrine function (producing insulin and glucagon from the Islets of Langerhans). Essential for blood sugar regulation and fat digestion.", funFact: "Pancreatitis is one of the most common serious digestive diseases in dogs, often triggered by high-fat foods." },
+        trachea: { name: "Trachea (Windpipe)", category: "Internal Organs", description: "A flexible tube made of 35-45 C-shaped cartilage rings connecting the larynx to the bronchi. About 10-12 cm long in medium dogs. The cartilage rings keep the airway open during breathing, while the posterior membrane allows the esophagus to expand during swallowing.", funFact: "Tracheal collapse is common in small breeds — it's why many toy breeds make a 'honking' cough sound." },
+        esophagus: { name: "Esophagus", category: "Internal Organs", description: "A muscular tube connecting the pharynx to the stomach. Unlike humans, the dog's entire esophagus is lined with striated (voluntary) muscle, allowing them to regurgitate food to feed puppies. Contains two sphincters — upper and lower — to prevent reflux.", funFact: "Dogs can swallow food much faster than humans because their esophageal muscles are entirely under voluntary control." },
+        diaphragm: { name: "Diaphragm", category: "Internal Organs", description: "A dome-shaped muscle separating the thoracic and abdominal cavities. The primary muscle of respiration — when it contracts, it flattens and creates negative pressure in the chest, drawing air into the lungs. Innervated by the phrenic nerve (C3-C5).", funFact: "Dogs can breathe 300-400 times per minute while panting, but use the diaphragm much less than during normal deep breathing." },
+        thyroid: { name: "Thyroid Gland", category: "Internal Organs", description: "Two lobes flanking the trachea near the larynx. Produces T3 (triiodothyronine) and T4 (thyroxine) hormones that regulate metabolism, heart rate, body temperature, and growth. Also produces calcitonin for calcium regulation.", funFact: "Hypothyroidism (underactive thyroid) is the most common hormonal disorder in dogs, causing weight gain and lethargy." },
+        adrenals: { name: "Adrenal Glands", category: "Internal Organs", description: "Two small glands sitting atop each kidney. The outer cortex produces cortisol (stress response), aldosterone (blood pressure), and androgens. The inner medulla produces adrenaline and noradrenaline for the fight-or-flight response.", funFact: "Cushing's disease (overactive adrenal glands) is very common in older dogs, causing excessive thirst and a pot-bellied appearance." },
+        gallbladder: { name: "Gallbladder", category: "Internal Organs", description: "A small pear-shaped sac attached to the liver. Stores and concentrates bile produced by the liver, releasing it into the duodenum through the common bile duct when fat enters the small intestine. Bile helps emulsify fats for digestion.", funFact: "Unlike humans, dogs rarely develop gallstones, but they can develop a condition called gallbladder mucocele where bile becomes thick and gelatinous." },
+        prostate: { name: "Prostate Gland", category: "Internal Organs", description: "A bilobed gland surrounding the urethra near the bladder neck in male dogs. Produces prostatic fluid that nourishes and transports sperm. In intact males, the prostate grows throughout life under testosterone influence.", funFact: "Over 80% of intact male dogs over age 5 develop benign prostatic hyperplasia — neutering causes the prostate to shrink by 70% within weeks." },
+        sternum: { name: "Sternum (Breastbone)", category: "Skeletal System", description: "Consists of 8 segments (sternebrae) connected by cartilage. The first segment (manubrium) is the widest, and the last (xiphoid process) is the narrowest. True ribs (1-9) attach here via costal cartilage, forming the ventral boundary of the thorax.", funFact: "The xiphoid process at the tip of the sternum is sometimes mistaken for a lump or tumor by worried dog owners." },
+        hyoid: { name: "Hyoid Apparatus", category: "Skeletal System", description: "A series of small bones and cartilage in the throat that support the tongue, larynx, and pharynx. Consists of paired stylohyoid, epihyoid, ceratohyoid, and thyrohyoid bones connected to a central basihyoid. Essential for swallowing and vocalization.", funFact: "The hyoid apparatus is what allows dogs to produce such a wide range of vocalizations — from barks to howls to growls." },
+        patella: { name: "Patella (Kneecap)", category: "Skeletal System", description: "A sesamoid bone (embedded in a tendon) located in front of the stifle (knee) joint. Glides in the trochlear groove of the femur and acts as a fulcrum to increase the mechanical advantage of the quadriceps muscles during extension.", funFact: "Luxating patella (kneecap popping out of place) affects up to 7% of all dogs and is the most common orthopedic condition in small breeds." },
+        carpals: { name: "Carpus (Wrist Bones)", category: "Skeletal System", description: "Seven small carpal bones arranged in two rows form the wrist joint. The proximal row includes the radial, ulnar, and accessory carpal bones. The distal row includes four numbered carpal bones. Provides flexibility while bearing significant weight during locomotion.", funFact: "Dogs have a 'stopper pad' (accessory carpal pad) on the back of each wrist that provides traction during sudden stops." },
+        tarsals: { name: "Tarsus (Ankle Bones)", category: "Skeletal System", description: "The hock joint contains 7 tarsal bones including the large calcaneus (heel bone) and talus. This joint is anatomically equivalent to the human ankle. It acts as a powerful lever arm during propulsion — the calcaneus serves as the attachment point for the Achilles tendon.", funFact: "The hock is what many people mistake for a 'backwards-bending knee' — it's actually the dog's ankle!" },
+        metacarpals: { name: "Metacarpals (Front Foot Bones)", category: "Skeletal System", description: "Four weight-bearing metacarpal bones (II-V) in each front foot, plus a vestigial first metacarpal supporting the dewclaw. These elongated bones are part of why dogs are digitigrade — walking on their toes rather than their whole foot.", funFact: "A dog's front paws bear about 60% of their total body weight, which is why front leg injuries are so common." },
+        metatarsals: { name: "Metatarsals (Hind Foot Bones)", category: "Skeletal System", description: "Four metatarsal bones in each hind foot. Slightly longer than the metacarpals, they provide the final lever arm for propulsion during running. The weight distribution in hind feet is different from front feet since they bear only 40% of body weight.", funFact: "Some breeds like the Norwegian Lundehund have 6 fully functional toes on each foot — the only dog breed with this trait!" },
+        phalanges: { name: "Phalanges (Toe Bones)", category: "Skeletal System", description: "Each main toe has three phalanges (proximal, middle, distal), while the dewclaw has two. The distal phalanx is shaped like a hook, providing attachment for the claw. The digital pads contain thick keratinized skin and fatty tissue for shock absorption.", funFact: "Dogs' toenails grow continuously like human nails. Wild wolves wear them down naturally, but domestic dogs often need regular trimming." },
+        cerebellum: { name: "Cerebellum", category: "Nervous System", description: "Located at the back of the brain, the cerebellum coordinates voluntary muscle movements, balance, and fine motor control. Contains more neurons than the rest of the brain combined. Essential for a dog's remarkable agility and coordination during running, jumping, and catching.", funFact: "The cerebellum processes movement so fast that a dog can adjust its stride mid-leap — that's why they can catch frisbees with such precision." },
+        brainstem: { name: "Brainstem", category: "Nervous System", description: "Connects the brain to the spinal cord, consisting of the midbrain, pons, and medulla oblongata. Controls vital automatic functions: heartbeat, breathing, blood pressure, swallowing, and sleep-wake cycles. All sensory and motor signals between brain and body pass through here.", funFact: "The brainstem is so vital that damage to the medulla oblongata is instantly fatal — it controls breathing and heartbeat." },
+        vagusNerve: { name: "Vagus Nerve (Cranial Nerve X)", category: "Nervous System", description: "The longest cranial nerve, running from the brainstem through the neck, thorax, and abdomen. Controls parasympathetic functions — slowing heart rate, stimulating digestion, and regulating inflammation. Innervates the larynx (controlling bark pitch), esophagus, heart, lungs, and most of the GI tract.", funFact: "The vagus nerve is why dogs sometimes faint when overly excited — vagal stimulation can cause a sudden drop in heart rate and blood pressure." },
+        femoralNerve: { name: "Femoral Nerve", category: "Nervous System", description: "Originates from lumbar spinal nerves L4-L6 and innervates the quadriceps muscles for knee extension. Also provides sensory innervation to the front of the thigh and inner leg. Damage causes inability to extend the stifle and weight-bear on the affected leg.", funFact: "Veterinarians test the femoral nerve by tapping the patellar tendon — a normal knee-jerk reflex means the nerve is intact." },
+        radialNerve: { name: "Radial Nerve", category: "Nervous System", description: "The largest nerve in the forelimb, originating from the brachial plexus (C7-T2). Controls all extensor muscles of the elbow, wrist, and digits. Injury causes 'dropped wrist' where the dog can't extend the paw and drags the top of the foot.", funFact: "The radial nerve wraps around the humerus bone, making it vulnerable to fractures — a broken upper arm often means temporary paralysis of the lower leg." },
+        intercostalNerves: { name: "Intercostal Nerves", category: "Nervous System", description: "Twelve pairs of nerves running between the ribs. They innervate the intercostal muscles (for breathing), the skin of the chest wall, and the abdominal muscles. Follow the neurovascular bundle along the caudal border of each rib.", funFact: "Intercostal nerve blocks are used in veterinary surgery to provide pain relief after chest procedures — blocking just a few nerves can numb a large area." },
+        opticNerve: { name: "Optic Nerve (Cranial Nerve II)", category: "Nervous System", description: "Carries visual information from the retina to the brain. Dogs have a tapetum lucidum (reflective layer) in their eyes that enhances night vision. While dogs see fewer colors than humans (dichromatic vs trichromatic), they excel at detecting motion and see much better in dim light.", funFact: "Dogs' eyes process images faster than humans — they see TV as a flickering slideshow at standard frame rates, which is why some dog-specific TV content uses higher frame rates." },
+        tricep: { name: "Triceps Brachii", category: "Muscular System", description: "A powerful three-headed muscle on the back of the upper forelimb. Originates from the scapula and humerus, inserting on the olecranon process of the ulna. Primary function is extending the elbow joint — essential for pushing off the ground during locomotion and supporting body weight during standing.", funFact: "The triceps do most of the work during a dog's deceleration — when a dog suddenly stops or lands from a jump, these muscles absorb the impact." },
+        bicep: { name: "Biceps Brachii", category: "Muscular System", description: "Located on the front of the upper forelimb, originating from the scapula and inserting on the radius and ulna. Despite its name, it has only one head in dogs (unlike two in humans). Primarily flexes the elbow and stabilizes the shoulder during weight-bearing.", funFact: "Dogs' biceps work differently from humans' — in dogs, this muscle is more important for stabilizing the shoulder than for flexing the elbow." },
+        quad: { name: "Quadriceps Femoris", category: "Muscular System", description: "A group of four muscles (rectus femoris, vastus lateralis, vastus medialis, vastus intermedius) on the front of the thigh. They converge on the patella and attach to the tibia via the patellar tendon. Primary function is extending the stifle (knee) — crucial for propulsion during running.", funFact: "The quadriceps generate most of the force for a dog's leap — a healthy German Shepherd can jump up to 6 feet vertically from standing." },
+        glutes: { name: "Gluteal Muscles", category: "Muscular System", description: "Three gluteal muscles (superficial, middle, deep) cover the hip joint. They extend and abduct the hip, and rotate the thigh. Critical for propulsion — they contract powerfully during the push-off phase of each stride and are especially important for climbing and jumping.", funFact: "Greyhounds have proportionally larger gluteal muscles than almost any other breed — this is a key factor in their incredible acceleration to 45 mph." },
+        intercostalMus: { name: "Intercostal Muscles", category: "Muscular System", description: "Two layers of muscles between each pair of ribs. External intercostals lift the ribs during inspiration (breathing in), while internal intercostals depress the ribs during forced expiration. Together with the diaphragm, they create the bellows mechanism of breathing.", funFact: "During normal quiet breathing, dogs primarily use the diaphragm. The intercostals kick in during exercise or when a dog is panting heavily." },
+        lats: { name: "Latissimus Dorsi", category: "Muscular System", description: "A broad, flat muscle covering the mid to lower back and sides. Originates from the thoracolumbar fascia and last several ribs, inserting on the humerus. Draws the forelimb backward and assists in flexing the shoulder. Important for swimming, climbing, and the retraction phase of running.", funFact: "The latissimus dorsi is one of the muscles that allows dogs to pull heavy loads — sled dogs develop exceptionally powerful lats." },
+        trapezius: { name: "Trapezius", category: "Muscular System", description: "A flat, triangular muscle covering the upper back and neck. Has cervical and thoracic parts. Elevates and stabilizes the scapula (shoulder blade), and assists in swinging the forelimb forward during locomotion. Works with the rhomboids to control scapular position.", funFact: "Because dogs lack a collarbone, the trapezius and other muscles must do all the work of attaching the forelimb to the body — it's like the entire shoulder hangs from a muscular sling." },
+        diaphragmMuscle: { name: "Diaphragm (Muscle View)", category: "Muscular System", description: "A thin, dome-shaped musculotendinous structure separating the thoracic and abdominal cavities. The muscular periphery contracts to flatten the dome, increasing thoracic volume and creating negative pressure for inspiration. The central tendon provides attachment for the pericardium.", funFact: "Hiccups in dogs are caused by involuntary spasms of the diaphragm — puppies get hiccups much more frequently than adult dogs." }
     };
 
     // ─── Mesh-to-anatomy mapping ────────────────────────────────
@@ -693,6 +978,31 @@
         neck: 'spine', neckMusR: 'shoulderMuscle', neckMusL: 'shoulderMuscle',
         pelvis: 'hindLeg', jawBone: 'skull',
         jawMusR: 'shoulderMuscle', jawMusL: 'shoulderMuscle',
+        // New organs
+        bladder: 'bladder', intestines: 'intestines',
+        spleen: 'spleen', pancreas: 'pancreas', esophagus: 'esophagus',
+        diaphragm: 'diaphragm', gallbladder: 'gallbladder', prostate: 'prostate',
+        thyroidR: 'thyroid', thyroidL: 'thyroid',
+        adrenalR: 'adrenals', adrenalL: 'adrenals',
+        // New skeletal
+        hyoid: 'hyoid',
+        patellaR: 'patella', patellaL: 'patella',
+        carpalR: 'carpals', carpalL: 'carpals',
+        tarsalR: 'tarsals', tarsalL: 'tarsals',
+        // New muscles
+        tricepR: 'tricep', tricepL: 'tricep',
+        bicepR: 'bicep', bicepL: 'bicep',
+        quadR: 'quad', quadL: 'quad',
+        gluteR: 'glutes', gluteL: 'glutes',
+        intercostal: 'intercostalMus',
+        latR: 'lats', latL: 'lats',
+        trapezius: 'trapezius',
+        diaphragmMus: 'diaphragmMuscle',
+        // New nervous
+        cerebellum: 'cerebellum', brainstem: 'brainstem',
+        femoralR: 'femoralNerve', femoralL: 'femoralNerve',
+        radialR: 'radialNerve', radialL: 'radialNerve',
+        opticR: 'opticNerve', opticL: 'opticNerve',
     };
 
     // ─── Labels ─────────────────────────────────────────────────
@@ -715,6 +1025,33 @@
         { text: "Shoulder", pos: [1.5, 3.1, 1.0], key: 'shoulderMuscle', views: ['muscular'] },
         { text: "Hindquarter", pos: [-1.6, 2.8, 0.8], key: 'hindMuscle', views: ['muscular'] },
         { text: "Back Muscles", pos: [0, 3.3, 0.6], key: 'backMuscle', views: ['muscular'] },
+        // New organ labels
+        { text: "Spleen", pos: [-0.2, 1.4, 0.7], key: 'spleen', views: ['organs'] },
+        { text: "Pancreas", pos: [-0.1, 1.45, 0.5], key: 'pancreas', views: ['organs'] },
+        { text: "Trachea", pos: [2.2, 3.1, 0.4], key: 'trachea', views: ['organs'] },
+        { text: "Esophagus", pos: [1.3, 2.8, -0.4], key: 'esophagus', views: ['organs'] },
+        { text: "Diaphragm", pos: [0.35, 2.6, 0.7], key: 'diaphragm', views: ['organs'] },
+        { text: "Thyroid", pos: [2.9, 3.1, 0.4], key: 'thyroid', views: ['organs'] },
+        { text: "Bladder", pos: [-1.2, 1.2, 0.4], key: 'bladder', views: ['organs'] },
+        { text: "Gallbladder", pos: [0.6, 1.5, 0.5], key: 'gallbladder', views: ['organs'] },
+        { text: "Intestines", pos: [-0.5, 1.3, 0.5], key: 'intestines', views: ['organs'] },
+        // New skeletal labels
+        { text: "Sternum", pos: [0.5, 1.3, 0.5], key: 'sternum', views: ['skeletal'] },
+        { text: "Patella", pos: [-1.55, 0.6, 0.8], key: 'patella', views: ['skeletal'] },
+        { text: "Pelvis", pos: [-1.85, 1.8, 0.7], key: 'hindLeg', views: ['skeletal'] },
+        // New muscle labels
+        { text: "Triceps", pos: [1.6, 1.2, 0.9], key: 'tricep', views: ['muscular'] },
+        { text: "Quadriceps", pos: [-1.55, 1.3, 0.8], key: 'quad', views: ['muscular'] },
+        { text: "Gluteals", pos: [-1.85, 2.7, 0.7], key: 'glutes', views: ['muscular'] },
+        { text: "Lats", pos: [-0.3, 2.9, 0.8], key: 'lats', views: ['muscular'] },
+        { text: "Trapezius", pos: [1.2, 3.4, 0.5], key: 'trapezius', views: ['muscular'] },
+        { text: "Diaphragm", pos: [0.35, 1.7, 0.6], key: 'diaphragmMuscle', views: ['muscular'] },
+        // New nervous labels
+        { text: "Cerebellum", pos: [3.2, 4.3, 0.4], key: 'cerebellum', views: ['nervous'] },
+        { text: "Brainstem", pos: [3.05, 3.0, 0.4], key: 'brainstem', views: ['nervous'] },
+        { text: "Vagus Nerve", pos: [1.5, 2.1, 0.5], key: 'vagusNerve', views: ['nervous'] },
+        { text: "Sciatic", pos: [-1.5, 1.1, 0.6], key: 'spinalCord', views: ['nervous'] },
+        { text: "Optic Nerve", pos: [4.1, 4.0, 0.5], key: 'opticNerve', views: ['nervous'] },
     ];
 
     const labelBox = document.createElement('div');
@@ -769,6 +1106,8 @@
             m.visible = vis;
             m.material.transparent = true;
             m.material.opacity = op;
+            m.material.side = THREE.DoubleSide;
+            if (op < 1) m.material.depthWrite = false;
         });
 
         const info = {
@@ -819,6 +1158,7 @@
                 spherical = { theta: 0.6, phi: 1.0, radius: 14 };
                 target = new THREE.Vector3(0, 2.0, 0);
                 updateCamera();
+                updateZoomLevel();
                 return;
             }
             document.querySelectorAll('.sys-btn').forEach(b => b.classList.remove('active'));
@@ -855,14 +1195,26 @@
         if (hits.length > 0) {
             const n = hits[0].object.userData.name;
             let key = meshMap[n];
-            if (!key && n.startsWith('vert_')) key = 'spine';
-            if (!key && n.startsWith('rib_')) key = 'ribcage';
-            if (!key && n.startsWith('sc_')) key = 'spinalCord';
-            if (!key && n.startsWith('tailB_')) key = 'tail';
-            if (!key && n.startsWith('sp_')) key = 'spine';
+            if (!key) key = resolvePrefixKey(n);
             if (key) selectPart(key);
         }
     });
+
+    function resolvePrefixKey(n) {
+        if (n.startsWith('vert_')) return 'spine';
+        if (n.startsWith('rib_')) return 'ribcage';
+        if (n.startsWith('sc_')) return 'spinalCord';
+        if (n.startsWith('tailB_')) return 'tail';
+        if (n.startsWith('sp_')) return 'spine';
+        if (n.startsWith('sternum_')) return 'sternum';
+        if (n.startsWith('metacR_') || n.startsWith('metacL_')) return 'metacarpals';
+        if (n.startsWith('metatR_') || n.startsWith('metatL_')) return 'metatarsals';
+        if (n.startsWith('phalFR_') || n.startsWith('phalFL_') || n.startsWith('phalHR_') || n.startsWith('phalHL_')) return 'phalanges';
+        if (n.startsWith('trachea_')) return 'trachea';
+        if (n.startsWith('vagus_')) return 'vagusNerve';
+        if (n.startsWith('intercNrv_')) return 'intercostalNerves';
+        return null;
+    }
 
     function checkHover(e) {
         mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
@@ -872,11 +1224,7 @@
         if (hits.length > 0) {
             const n = hits[0].object.userData.name;
             let key = meshMap[n];
-            if (!key && n.startsWith('vert_')) key = 'spine';
-            if (!key && n.startsWith('rib_')) key = 'ribcage';
-            if (!key && n.startsWith('sc_')) key = 'spinalCord';
-            if (!key && n.startsWith('tailB_')) key = 'tail';
-            if (!key && n.startsWith('sp_')) key = 'spine';
+            if (!key) key = resolvePrefixKey(n);
             const data = anatomyData[key];
             if (data) {
                 tooltip.textContent = data.name;
